@@ -1,0 +1,19 @@
+[Unit]
+Description=WerkstattDatenBank (Fahrzeug- und Teiledatenbank für freie Werkstätten)
+Documentation=https://github.com/HatchetMan111/WerkStattDatenBank
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=wdb
+Group=wdb
+EnvironmentFile=/etc/werkstattdatenbank.env
+WorkingDirectory=/opt/werkstattdatenbank/backend
+ExecStart=/usr/bin/python3 /opt/werkstattdatenbank/backend/app.py
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

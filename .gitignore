@@ -1,0 +1,9 @@
+node_modules/
+backend/data/
+__pycache__/
+*.pyc
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.log
+.env

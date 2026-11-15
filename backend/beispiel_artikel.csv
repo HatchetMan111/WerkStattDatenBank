@@ -1,0 +1,4 @@
+lieferant;artikelnr;bezeichnung;gruppe;ean;oe;ek_netto;haendler
+Demo-Teile;DEMO-LF-5000;Luftfilter (Demo);Luftfilter;;Musterwagen:OE-DEMO-5;11,40;Demo-Großhandel
+Demo-Teile;DEMO-IF-6000;Innenraumfilter Aktivkohle (Demo);Innenraumfilter;;Musterwagen:OE-DEMO-6|Musterwagen:OE-DEMO-66;9,90;Demo-Großhandel
+Demo-Teile;DEMO-WP-7000;Wasserpumpe mit Dichtung (Demo);Wasserpumpen;;Musterwagen:OE-DEMO-7;43,00;Demo-Großhandel
