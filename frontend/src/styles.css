@@ -101,3 +101,18 @@ dialog label { display: block; font-size: 13px; color: var(--muted); margin: 10p
 @media (max-width: 520px) { .grid2 { grid-template-columns: 1fr; } }
 
 .status.fehler { color: var(--bad); }
+
+/* ---- Import-Dialog ---- */
+dialog.import { width: min(760px, 96vw); }
+dialog.import h3 { margin: 18px 0 6px; font-size: 15px; }
+dialog.import .src { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 8px 0; }
+dialog.import .src p { margin: 4px 0; color: var(--muted); font-size: 13px; }
+dialog.import .src .name { color: var(--ink); font-weight: 600; }
+dialog.import .saved { display: flex; gap: 8px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 6px 0; border-top: 1px solid var(--line); }
+dialog.import .saved:first-of-type { border-top: 0; }
+dialog.import progress { width: 100%; height: 10px; }
+dialog.import .job { margin-top: 14px; padding: 10px 12px; border-radius: 8px; background: var(--bg); border: 1px solid var(--line); }
+dialog.import .job.fehler { border-color: var(--bad); }
+dialog.import .job pre { white-space: pre-wrap; font-size: 12px; max-height: 200px; overflow: auto; }
+dialog.import .row2 { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+dialog.import .row2 label { flex: 1 1 200px; }

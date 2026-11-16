@@ -18,6 +18,11 @@ const ARTIKEL: { id: number; lieferant: string; artikelnr: string; bezeichnung: 
 
 function fixtureFetch(): typeof fetch {
   const passt = new Set<string>(["1:1", "3:1"]); // artikel:fahrzeug
+  let fahrzeugAnzahl = 3;
+  let job: Record<string, unknown> = { id: 0, state: "leer", phase: "", fortschritt: 0, name: "", ergebnis: null, fehler: null, details: null };
+  let abfragen = 0;
+  let naechstesFehler = false;
+  const gemerkt: { id: number; typ: string; name: string; url: string; letzter_lauf: string | null; ergebnis: string | null }[] = [];
   const json = (data: unknown, status = 200) =>
     Promise.resolve(new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } }));
 
@@ -28,7 +33,7 @@ function fixtureFetch(): typeof fetch {
     const sp = url.searchParams;
     if (p === "/api/stats") {
       return json({
-        zahlen: { hersteller: 1, modelle: 1, fahrzeuge: 3, artikel: ARTIKEL.length, zuordnungen: passt.size },
+        zahlen: { hersteller: 1, modelle: 1, fahrzeuge: fahrzeugAnzahl, artikel: ARTIKEL.length, zuordnungen: passt.size },
         quellen: [{ key: "demo", name: "Demo-Daten", url: null, lizenz: "frei", stand: "2026-01", eintraege: 3 }],
         schreiben: true,
         token_noetig: false,
@@ -80,8 +85,52 @@ function fixtureFetch(): typeof fetch {
       ARTIKEL.push({ id: 4, lieferant: b.lieferant, artikelnr: b.artikelnr, bezeichnung: b.bezeichnung, quelle: "manuell", gruppe: null, ek_min: null });
       return json({ id: 4 }, 201);
     }
+    if (p === "/api/import/quellen" && m === "GET") {
+      return json({
+        katalog: [{ key: "eea", typ: "eea", name: "EEA – CO2-Überwachung neuer Pkw (Fahrzeugdaten)", seite: "https://www.eea.europa.eu/x", lizenz: "CC BY 4.0", hinweis: "Download öffnen." }],
+        gespeichert: gemerkt,
+      });
+    }
+    if (p === "/api/import/status") {
+      abfragen += 1;
+      if (job.state === "laeuft" && abfragen >= 2) {
+        if (naechstesFehler) job = { ...job, state: "fehler", phase: "Fehlgeschlagen", fehler: "Download fehlgeschlagen: HTTP 404", details: "Traceback (most recent call last): …" };
+        else {
+          fahrzeugAnzahl = 4200;
+          job = { ...job, state: "fertig", phase: "Fertig", ergebnis: { typ: "eea", zeilen: 9000, in_datenbank: 4200 } };
+        }
+      }
+      return json(job);
+    }
+    if (p === "/api/import/url" && m === "POST") {
+      const b = JSON.parse(String(init?.body)) as { url: string; name: string; merken: boolean };
+      naechstesFehler = b.url.includes("fehler");
+      abfragen = 0;
+      job = { id: Number(job.id) + 1, state: "laeuft", phase: "Herunterladen", fortschritt: 1048576, name: b.name || "Download", ergebnis: null, fehler: null, details: null };
+      if (b.merken) gemerkt.push({ id: 1, typ: "eea", name: b.name, url: b.url, letzter_lauf: null, ergebnis: null });
+      return json({ ok: true, job: job.id });
+    }
     return json({ fehler: `unbekannt: ${m} ${p}` }, 404);
   }) as unknown as typeof fetch;
+}
+
+/** Ersatz für XMLHttpRequest (jsdom würde sonst ins Netz gehen): meldet Fortschritt und antwortet mit Job 1. */
+class FakeXhr {
+  static gesendet: { url: string; headers: Record<string, string>; groesse: number }[] = [];
+  upload: { onprogress: ((e: { lengthComputable: boolean; loaded: number; total: number }) => void) | null } = { onprogress: null };
+  onload: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  status = 200;
+  responseText = '{"ok":true,"job":1}';
+  private url = "";
+  private headers: Record<string, string> = {};
+  open(_m: string, url: string) { this.url = url; }
+  setRequestHeader(k: string, v: string) { this.headers[k] = v; }
+  send(f: File) {
+    FakeXhr.gesendet.push({ url: this.url, headers: this.headers, groesse: f.size });
+    this.upload.onprogress?.({ lengthComputable: true, loaded: f.size, total: f.size });
+    setTimeout(() => this.onload?.(), 0);
+  }
 }
 
 const zeilen = () => within(screen.getByRole("table")).getAllByRole("row").slice(1);
@@ -172,7 +221,7 @@ describe("WerkstattDatenBank", () => {
   it("legt einen neuen Artikel an und öffnet dessen Detail", async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "Neuer Artikel" }));
-    const dlg = document.querySelector("dialog")!;
+    const dlg = document.querySelector("dialog:not(.import)")!;
     expect(dlg.hasAttribute("open")).toBe(true);
     const nr = "TEST-" + Date.now();
     fireEvent.change(dlg.querySelector("input[name=lieferant]")!, { target: { value: "Testlieferant" } });
@@ -182,5 +231,50 @@ describe("WerkstattDatenBank", () => {
     await waitFor(() => expect(dlg.hasAttribute("open")).toBe(false));
     const detail = await screen.findByLabelText("Artikeldetail");
     await within(detail).findByRole("heading", { name: "Testteil" });
+  });
+
+  describe.skipIf(!!BASE)("Daten importieren (Testdaten)", () => {
+    async function oeffneImport() {
+      fireEvent.click(await screen.findByRole("button", { name: "Daten importieren" }));
+      await waitFor(() => expect(document.querySelector("dialog.import[open]")).toBeTruthy());
+      return document.querySelector("dialog.import") as HTMLElement;
+    }
+
+    it("lädt von einer Adresse, merkt sie und aktualisiert die Zahlen", async () => {
+      render(<App />);
+      const dlg = await oeffneImport();
+      await within(dlg).findByText(/EEA – CO2-Überwachung/);
+      expect(within(dlg).getByRole("link", { name: "Download-Seite öffnen" }).getAttribute("rel")).toContain("noopener");
+      fireEvent.change(within(dlg).getByLabelText(/Direkter Download-Link/), { target: { value: "https://example.org/eea.csv" } });
+      fireEvent.change(within(dlg).getByLabelText("Name der Quelle"), { target: { value: "EEA 2024" } });
+      fireEvent.click(within(dlg).getByRole("button", { name: "Laden und importieren" }));
+      await within(dlg).findByText(/Fertig:/, {}, { timeout: 5000 });
+      await within(dlg).findByText("Gemerkte Quellen");
+      await waitFor(() => expect(document.querySelector(".zahlen")!.textContent).toContain("4.200"), { timeout: 3000 });
+    });
+
+    it("zeigt Fehler samt technischen Details", async () => {
+      render(<App />);
+      const dlg = await oeffneImport();
+      fireEvent.change(within(dlg).getByLabelText(/Direkter Download-Link/), { target: { value: "https://example.org/fehler.csv" } });
+      fireEvent.click(within(dlg).getByRole("button", { name: "Laden und importieren" }));
+      await within(dlg).findByText(/HTTP 404/, {}, { timeout: 5000 });
+      expect(within(dlg).getByText(/vollständige Fehlerkette/)).toBeTruthy();
+    });
+
+    it("lädt eine Datei hoch (mit Schutz-Header) und zeigt das Ergebnis", async () => {
+      vi.stubGlobal("XMLHttpRequest", FakeXhr);
+      FakeXhr.gesendet = [];
+      render(<App />);
+      const dlg = await oeffneImport();
+      const input = within(dlg).getByLabelText(/CSV-Datei/) as HTMLInputElement;
+      const datei = new File(["Mk;Cn\nBMW;320D\n"], "eea.csv", { type: "text/csv" });
+      fireEvent.change(input, { target: { files: [datei] } });
+      fireEvent.click(within(dlg).getByRole("button", { name: "Hochladen und importieren" }));
+      await waitFor(() => expect(FakeXhr.gesendet.length).toBe(1));
+      expect(FakeXhr.gesendet[0].headers["X-WDB-Upload"]).toBe("1");
+      expect(FakeXhr.gesendet[0].url).toContain("typ=auto");
+      expect(FakeXhr.gesendet[0].url).toContain("name=eea.csv");
+    });
   });
 });

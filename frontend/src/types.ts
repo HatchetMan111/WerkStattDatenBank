@@ -58,3 +58,34 @@ export interface ArtikelDetail {
 
 /** Das gewählte Fahrzeug samt Anzeigetitel (Hersteller, Modell, Variante). */
 export interface FahrzeugAuswahl { id: number; label: string; titel: string }
+
+export interface KatalogQuelle {
+  key: string;
+  typ: string;
+  name: string;
+  seite: string;
+  lizenz: string;
+  hinweis: string;
+}
+
+export interface GemerkteQuelle {
+  id: number;
+  typ: string;
+  name: string;
+  url: string;
+  letzter_lauf: string | null;
+  ergebnis: string | null;
+}
+
+export interface ImportQuellen { katalog: KatalogQuelle[]; gespeichert: GemerkteQuelle[] }
+
+export interface ImportStatus {
+  id: number;
+  state: "leer" | "laeuft" | "fertig" | "fehler";
+  phase: string;
+  fortschritt: number;
+  name: string;
+  ergebnis: Record<string, string | number> | null;
+  fehler: string | null;
+  details: string | null;
+}

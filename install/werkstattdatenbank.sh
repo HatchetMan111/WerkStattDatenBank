@@ -15,6 +15,7 @@
 #   var_storage=…           Speicher für die Container-Platte (Standard: automatisch)
 #   var_template_storage=…  Speicher für Vorlagen (Standard: automatisch)
 #   var_port=8080           Port der Weboberfläche
+#   var_import_url=https://…  direkter Download-Link (CSV/ZIP/GZ, z. B. EEA-Fahrzeugdaten): wird nach der Installation importiert
 #   var_new=1               immer neuen Container anlegen
 #   WDB_REPO / WDB_BRANCH   anderes Repo bzw. anderer Branch
 #   WDB_DEBUG=1  oder  --debug     ausführliches bash -x Protokoll
@@ -30,7 +31,7 @@ WDB_SRC_URL="${WDB_SRC_URL:-}"
 for a in "$@"; do
   case "$a" in
     --debug) WDB_DEBUG=1 ;;
-    -h | --help) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h | --help) sed -n "2,23p" "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Unbekannte Option: $a (erlaubt: --debug, --help)" >&2; exit 2 ;;
   esac
 done
@@ -227,6 +228,7 @@ provision() { # $1 = install|update
 
   local envs=(MODE="$mode" WDB_PORT="$PORT" WDB_REPO="$WDB_REPO" WDB_BRANCH="$WDB_BRANCH" WDB_DEBUG="${WDB_DEBUG:-0}")
   [[ -n "$WDB_SRC_URL" ]] && envs+=(WDB_SRC_URL="$WDB_SRC_URL")
+  [[ -n "${var_import_url:-}" ]] && envs+=(WDB_IMPORT_URL="$var_import_url")
 
   info "Richte die Anwendung im Container ein ($mode)… (das dauert etwa eine Minute)"
   local rc=0

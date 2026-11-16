@@ -8,12 +8,15 @@ Umgebungsvariablen:
   WDB_TOKEN  Zugangs-Token für Änderungen. Pflicht, sobald der Server nicht nur lokal läuft.
   WDB_DB     Pfad zur SQLite-Datei
   WDB_STATIC Ordner mit der gebauten Oberfläche (Standard: ../frontend/dist)
+  WDB_MAX_UPLOAD_MB   größte erlaubte Upload-Datei (Standard 2048)
+  WDB_MAX_IMPORT_MB   größte erlaubte entpackte/heruntergeladene Datei (Standard 4096)
 """
 import hmac
 import json
 import mimetypes
 import os
 import re
+import shutil
 import sqlite3
 import sys
 import traceback
@@ -22,6 +25,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 import wdb_db as db
+import wdb_import as imp
 
 STATIC = Path(os.environ.get("WDB_STATIC") or db.BASE.parent / "frontend" / "dist").resolve()
 HOST = os.environ.get("WDB_HOST", "127.0.0.1")
@@ -29,6 +33,8 @@ PORT = int(os.environ.get("WDB_PORT", "8080"))
 TOKEN = os.environ.get("WDB_TOKEN", "")
 LOOPBACK = HOST in ("127.0.0.1", "localhost", "::1")
 MAX_BODY = 1_000_000
+MAX_UPLOAD = int(os.environ.get("WDB_MAX_UPLOAD_MB", "2048")) * 1024 * 1024
+KATALOG = Path(__file__).with_name("open_quellen.json")
 PS_PRO_KW = 1.35962
 
 
@@ -210,6 +216,29 @@ def create_artikel(con, b):
     return {"id": aid}
 
 
+def import_quellen(con):
+    try:
+        katalog = json.loads(KATALOG.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        katalog = []
+    return {"katalog": katalog, "gespeichert": [dict(r) for r in con.execute("SELECT * FROM import_quelle ORDER BY name")]}
+
+
+def starte_url_import(con, b, quelle_id=None):
+    if imp.laeuft():
+        raise ApiError(409, "Es läuft bereits ein Import. Bitte warten, bis er fertig ist.", "belegt")
+    url = imp.pruefe_url(s(b.get("url"), 2000))
+    typ = b.get("typ") if b.get("typ") in ("auto", "eea", "artikel") else "auto"
+    name = s(b.get("name"), 120) or urlparse(url).hostname or "Download"
+    if b.get("merken") and quelle_id is None:
+        con.execute("""INSERT INTO import_quelle(typ, name, url) VALUES (?,?,?)
+                       ON CONFLICT(url) DO UPDATE SET typ = excluded.typ, name = excluded.name""", (typ, name, url))
+        con.commit()
+        quelle_id = con.execute("SELECT id FROM import_quelle WHERE url = ?", (url,)).fetchone()[0]
+    job = imp.starte(name, imp.neuer_ordner(), typ, s(b.get("quelle"), 120) or name, url=url, quelle_id=quelle_id)
+    return {"ok": True, "job": job}
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "WerkstattDatenBank"
 
@@ -271,6 +300,37 @@ class Handler(BaseHTTPRequestHandler):
             raise ApiError(400, "JSON-Objekt erwartet")
         return data
 
+    def _upload(self, q):
+        """Rohe Datei im Body (kein JSON). Der Header X-WDB-Upload verhindert Cross-Site-Formulare."""
+        if self.headers.get("X-WDB-Upload") != "1":
+            raise ApiError(400, "Header X-WDB-Upload: 1 fehlt")
+        n = int_or_none(self.headers.get("Content-Length"))
+        if not n or n <= 0:
+            raise ApiError(411, "Content-Length erforderlich")
+        if n > MAX_UPLOAD:
+            raise ApiError(413, f"Datei zu groß (Grenze {MAX_UPLOAD // 1048576} MB, WDB_MAX_UPLOAD_MB)")
+        if imp.laeuft():
+            raise ApiError(409, "Es läuft bereits ein Import. Bitte warten, bis er fertig ist.", "belegt")
+        typ = q.get("typ", "auto")
+        if typ not in ("auto", "eea", "artikel"):
+            raise ApiError(400, "typ muss auto, eea oder artikel sein")
+        ordner = imp.neuer_ordner()
+        ziel = ordner / "upload.bin"
+        try:
+            rest = n
+            with open(ziel, "wb") as f:
+                while rest > 0:
+                    block = self.rfile.read(min(1 << 20, rest))
+                    if not block:
+                        raise ApiError(400, "Upload unvollständig")
+                    f.write(block)
+                    rest -= len(block)
+            job = imp.starte(s(q.get("name"), 120) or "Upload", ordner, typ, s(q.get("quelle"), 120) or None, datei=ziel)
+        except BaseException:
+            shutil.rmtree(ordner, ignore_errors=True)
+            raise
+        return {"ok": True, "job": job}
+
     # ---- Routing ----
     def do_GET(self):
         self._route("GET")
@@ -298,6 +358,8 @@ class Handler(BaseHTTPRequestHandler):
                 raise ApiError(405, "Methode nicht erlaubt")
         except ApiError as e:
             self._json(e.status, {"fehler": e.msg, "code": e.code})
+        except imp.ImportFehler as e:
+            self._json(400, {"fehler": str(e), "code": "import"})
         except sqlite3.IntegrityError as e:
             msg = "Eintrag existiert bereits" if "UNIQUE" in str(e) else "Ungültige Referenz (unbekannte ID)"
             self._json(409, {"fehler": msg, "code": "konflikt"})
@@ -332,6 +394,11 @@ class Handler(BaseHTTPRequestHandler):
                          "leistung_kw": r["leistung_kw"]} for r in rows]
             if path == "/api/gruppen":
                 return gruppen_baum(con)
+            if path == "/api/import/quellen":
+                return import_quellen(con)
+            if path == "/api/import/status":
+                self._require_write()
+                return imp.status()
             if path == "/api/artikel":
                 return list_artikel(con, q)
             m = re.fullmatch(r"/api/artikel/(\d+)", path)
@@ -340,6 +407,20 @@ class Handler(BaseHTTPRequestHandler):
             raise ApiError(404, "Unbekannter Endpunkt")
 
         self._require_write()
+        if method == "POST" and path == "/api/import/upload":
+            return self._upload(q)
+        if method == "POST" and path == "/api/import/url":
+            return starte_url_import(con, self._body())
+        m = re.fullmatch(r"/api/import/quellen/(\d+)(/aktualisieren)?", path)
+        if m and method == "POST" and m.group(2):
+            row = con.execute("SELECT * FROM import_quelle WHERE id = ?", (int(m.group(1)),)).fetchone()
+            if not row:
+                raise ApiError(404, "Gemerkte Quelle nicht gefunden")
+            return starte_url_import(con, {"url": row["url"], "typ": row["typ"], "name": row["name"]}, int(m.group(1)))
+        if m and method == "DELETE" and not m.group(2):
+            con.execute("DELETE FROM import_quelle WHERE id = ?", (int(m.group(1)),))
+            con.commit()
+            return {"ok": True}
         if method == "POST" and path == "/api/artikel":
             return create_artikel(con, self._body())
         if method == "POST" and path == "/api/fitment":
@@ -370,6 +451,7 @@ def main():
     con = db.connect()
     db.init_schema(con)
     con.close()
+    imp.aufraeumen_start()
     if not (STATIC / "index.html").is_file():
         print(f"Hinweis: Oberfläche fehlt ({STATIC}). Die API läuft trotzdem.", file=sys.stderr)
     if not LOOPBACK and not TOKEN:

@@ -3,6 +3,7 @@ import { api } from "./api";
 import DetailPanel from "./components/DetailPanel";
 import Footer from "./components/Footer";
 import GroupTree from "./components/GroupTree";
+import ImportDialog from "./components/ImportDialog";
 import NewArticleDialog from "./components/NewArticleDialog";
 import ResultTable from "./components/ResultTable";
 import VehiclePicker from "./components/VehiclePicker";
@@ -26,6 +27,7 @@ export default function App() {
   const [detailId, setDetailId] = useState<number | null>(null);
   const [detail, setDetail] = useState<ArtikelDetail | null>(null);
   const [neu, setNeu] = useState(false);
+  const [importOffen, setImportOffen] = useState(false);
   const [version, setVersion] = useState(0); // erhöht sich nach Änderungen → Liste neu laden
   const req = useRef(0);
 
@@ -95,6 +97,12 @@ export default function App() {
 
   const neuLaden = () => setVersion((v) => v + 1);
 
+  const nachImport = useCallback(() => {
+    void ladeStats();
+    void ladeGruppen();
+    setVersion((v) => v + 1);
+  }, [ladeStats, ladeGruppen]);
+
   function suchen(e: FormEvent) {
     e.preventDefault();
     setQ(eingabe.trim());
@@ -130,7 +138,10 @@ export default function App() {
           <button type="submit">Suchen</button>
         </form>
         {stats?.schreiben && (
-          <button type="button" className="ghost" onClick={() => setNeu(true)}>Neuer Artikel</button>
+          <>
+            <button type="button" className="ghost" onClick={() => setNeu(true)}>Neuer Artikel</button>
+            <button type="button" className="ghost" onClick={() => setImportOffen(true)}>Daten importieren</button>
+          </>
         )}
       </header>
 
@@ -153,7 +164,7 @@ export default function App() {
 
       <main className="layout">
         <aside className="side" aria-label="Fahrzeug und Produktgruppen">
-          <VehiclePicker fahrzeug={fahrzeug} onChange={setFahrzeug} onMeldung={zeige} />
+          <VehiclePicker fahrzeug={fahrzeug} onChange={setFahrzeug} onMeldung={zeige} neuLadenKey={version} />
           <GroupTree baum={baum} aktiv={gruppe?.id ?? null} onWaehle={(g) => setGruppe(g && (g.id === gruppe?.id ? null : { id: g.id, name: g.name }))} />
         </aside>
 
@@ -195,6 +206,8 @@ export default function App() {
       </main>
 
       <Footer quellen={stats?.quellen ?? []} />
+
+      <ImportDialog offen={importOffen} onClose={() => setImportOffen(false)} onFertig={nachImport} />
 
       <NewArticleDialog
         offen={neu}

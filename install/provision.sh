@@ -10,6 +10,7 @@
 #   WDB_BRANCH    Standard: main
 #   WDB_PORT      Standard: 8080
 #   WDB_DEBUG     1 = bash -x Ablaufprotokoll
+#   WDB_IMPORT_URL  optional: direkter Download-Link (CSV/ZIP/GZ), wird nach der Installation importiert
 set -Eeuo pipefail
 
 MODE="${MODE:-install}"
@@ -206,6 +207,17 @@ verify() {
   say "Selbsttest ok: Dienst aktiv, API und Oberfläche antworten auf Port $port."
 }
 
+# Optionaler Erstimport. Ein Fehler hier bricht die Installation NICHT ab (der Import lässt sich in der Oberfläche wiederholen).
+first_import() {
+  [[ -n "${WDB_IMPORT_URL:-}" ]] || return 0
+  say "Erstimport aus $WDB_IMPORT_URL …"
+  if ! run /usr/local/bin/wdb-run import_url.py "$WDB_IMPORT_URL"; then
+    say "WARNUNG: Der Erstimport ist fehlgeschlagen (Details oben). Die Installation ist trotzdem fertig – Import später in der Oberfläche wiederholen."
+  else
+    say "Erstimport abgeschlossen."
+  fi
+}
+
 main() {
   say "WerkstattDatenBank – Modus: $MODE"
   install_packages
@@ -220,6 +232,7 @@ main() {
     rollback
     die "Einrichtung fehlgeschlagen (siehe oben). Vorherige Version wiederhergestellt, falls vorhanden."
   fi
+  first_import
   rm -rf "$SRC_TMP"
   # Nur die zwei neuesten Sicherungen behalten.
   find "$(dirname "$APP_DIR")" -maxdepth 1 -name "$APP.old-*" 2>/dev/null | sort -r | tail -n +3 | xargs -r rm -rf || true

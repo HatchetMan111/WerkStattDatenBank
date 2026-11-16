@@ -50,6 +50,7 @@ Das Skript
 | `var_ip` / `var_gw` | feste IP, z. B. `192.168.178.60/24` und Gateway | DHCP |
 | `var_storage` / `var_template_storage` | Speicher für Platte / Vorlage | automatisch (`local-lvm` / `local`) |
 | `var_port` | Port der Oberfläche | `8080` |
+| `var_import_url` | Download-Link (CSV/ZIP/GZ), der nach der Installation importiert wird | – |
 | `var_new=1` | immer neuen Container anlegen (statt Update) | – |
 | `WDB_REPO`, `WDB_BRANCH` | anderes Repo / Branch (Fork) | dieses Repo, `main` |
 | `WDB_DEBUG=1` oder `--debug` | `bash -x`-Ablaufprotokoll ins Log | aus |
@@ -69,21 +70,40 @@ Beispiel: `var_ctid=150 var_ram=2048 var_ip=192.168.178.60/24 var_gw=192.168.178
 
 ## Daten laden
 
-Importe laufen im Container mit dem Hilfsprogramm `wdb-run` (führt Python als Dienstbenutzer mit der richtigen Datenbank aus):
+**In der Oberfläche** (Knopf **„Daten importieren“** oben rechts, Zugangs-Token nötig):
+
+1. **Datei hochladen** – CSV, auch als `.zip` oder `.gz`. Die Art wird automatisch erkannt (EEA-Fahrzeugdaten oder Artikelliste).
+2. **Aus dem Internet laden** – direkten Download-Link einfügen; mit „Link merken“ wird er gespeichert, und die Daten lassen sich später mit
+   **„Aktualisieren“** erneut laden. Im Dialog steht die Seite der frei zugänglichen EEA-Daten samt Lizenz (CC BY 4.0 laut Metadaten der Ausgabe 2024).
+3. Fortschritt, Ergebnis und bei Fehlern die vollständige Fehlerkette werden im Dialog angezeigt. Es läuft immer nur ein Import gleichzeitig.
+
+**Fahrzeuge aus den offenen EEA-Daten:** Die Daten sind nicht im Repository enthalten (sehr groß). So kommen sie in die Datenbank:
+
+1. Die Seite „Monitoring of CO2 emissions from passenger cars“ der EEA öffnen (Link im Import-Dialog), den gewünschten Jahrgang wählen, **Download** → CSV.
+2. Datei im Import-Dialog hochladen **oder** den Download-Link einfügen. Mehrere Jahre jeweils einzeln importieren: Zulassungszahlen gelten dann für die zuletzt
+   importierte Datei, Baujahrspanne und Varianten wachsen mit. (Soll alles in einem Lauf berechnet werden: Kommandozeile, siehe unten.)
+3. Die Quelle und Lizenz erscheinen automatisch im Seitenfuß.
+
+Die EEA-Daten liefern Marke, Modell, Kraftstoff, Hubraum, Leistung, CO2 und Zulassungen – **keine Teile, keine HSN/TSN, keine Preise.**
+Teile und Zuordnungen kommen aus eigenen Listen (Artikel-CSV) oder werden in der Oberfläche gepflegt.
+
+**Direkt bei der Installation:** `var_import_url=<Download-Link> bash -c "$(wget -qLO - …)"` importiert nach der Installation automatisch
+(ein Fehler dabei bricht die Installation nicht ab).
+
+**Kommandozeile** (im Container mit `wdb-run`, braucht kein Token):
 
 ```bash
-# Beispieldaten (erkennbar erfunden)
-pct exec 120 -- wdb-run init_db.py --demo
-
-# EEA-Fahrzeugdaten: CSV selbst von der EEA-Datenseite laden (Quellenangabe nötig), dann:
+pct exec 120 -- wdb-run init_db.py --demo                          # erkennbar erfundene Beispieldaten
+pct exec 120 -- wdb-run import_url.py https://…/daten.zip           # Download + Import
 pct push 120 co2_2024.csv /root/co2_2024.csv
-pct exec 120 -- wdb-run import_eea.py /root/co2_2024.csv
-
-# Eigene/Großhändler-Artikelliste (Format: backend/beispiel_artikel.csv)
-pct push 120 meine_artikel.csv /root/meine_artikel.csv
+pct exec 120 -- wdb-run import_eea.py /root/co2_2024.csv --zeigen   # nur die Spaltenzuordnung prüfen
+pct exec 120 -- wdb-run import_eea.py /root/co2_2023.csv /root/co2_2024.csv   # mehrere Jahre in EINEM Lauf
+pct push 120 meine_artikel.csv /root/meine_artikel.csv              # Format: backend/beispiel_artikel.csv
 pct exec 120 -- wdb-run import_artikel_csv.py /root/meine_artikel.csv --quelle "Großhandel Müller"
 ```
 
+Importschutz: nur `https://`, keine Zugangsdaten in der URL, Ziele in internen Netzen (z. B. `192.168.x.x`, `127.0.0.1`, Cloud-Metadaten) werden abgelehnt,
+Weiterleitungen werden einzeln geprüft, Größen- und ZIP-Bomben-Grenzen (`WDB_MAX_UPLOAD_MB`, `WDB_MAX_IMPORT_MB`), Upload nur mit Token und Spezial-Header.
 Nutze nur Daten, die du verwenden darfst (eigene Listen, Händlerlisten im Rahmen der Händlerbedingungen, offene Daten mit Quellenangabe).
 Es werden keine Daten fremder Kataloge kopiert.
 
@@ -126,6 +146,7 @@ Das Protokoll liegt unter `/var/log/werkstattdatenbank-verify-<Zeit>.log`; Ergeb
 ```bash
 cd backend && python3 init_db.py --demo && python3 app.py        # API + Oberfläche auf http://127.0.0.1:8080
 cd frontend && npm install && npm run dev                        # Vite-Entwicklungsserver, /api wird an 127.0.0.1:8080 weitergeleitet
+python3 test/test_import.py                                      # Import-Tests (Upload, Download, Schutz) – startet eigene Server
 cd frontend && npm test                                          # Oberflächentest (Testdaten)
 cd frontend && WDB_E2E_BASE=http://127.0.0.1:8080 npm test       # derselbe Test gegen das echte Backend
 cd frontend && npm run build                                     # erzeugt frontend/dist
@@ -143,14 +164,15 @@ Dienst läuft als unprivilegierter Benutzer `wdb` im unprivilegierten Container.
 
 ## Was getestet ist – und was nicht
 
-Getestet (in einer Entwicklungsumgebung): Backend-API und Importer, React-Oberfläche (Vitest, mit Testdaten **und** gegen das echte Backend),
+Getestet (in einer Entwicklungsumgebung): Backend-API und Importer (17 automatisierte Tests, u. a. Upload, ZIP, Download mit Weiterleitung, gemerkte Quellen, Schutz vor internen Adressen),
+React-Oberfläche (Vitest, mit Testdaten **und** gegen das echte Backend; zusätzlich ein Lauf mit echtem Browser: Upload und Link-Import im gebauten UI),
 `bash -n` und `shellcheck` aller Skripte, eine **Simulation** des Installers mit nachgebauten `pct`/`pvesh`/`pveam`/`pvesm`/`systemctl`-Befehlen
 (Neuinstallation, Update mit Datenerhalt, Neustart-Test, Fehlerfälle, Aufräumen).
 
-**Nicht** getestet: ein echter Lauf auf einem Proxmox-Host (echte Container-Erstellung, apt im Container, echtes systemd, echter Neustart).
+**Nicht** getestet: ein Download direkt von den EEA-Servern (aus der Entwicklungsumgebung nicht erreichbar – der Import wurde mit lokal bereitgestellten Dateien geprüft; die echten EEA-Spaltennamen sind im Importer als Aliase hinterlegt, `--zeigen` bzw. die Fehlermeldung zeigt die Kopfzeile, falls etwas nicht passt), sowie ein echter Lauf auf einem Proxmox-Host (echte Container-Erstellung, apt im Container, echtes systemd, echter Neustart).
 Bitte nach der ersten Installation `bash test/verify.sh` auf dem Host ausführen und bei Abweichungen das Installer-Protokoll prüfen.
 
 ## Datenquellen und Lizenz
 
-Eigene Einträge, Importe aus eigenen/Händlerlisten und offene EEA-Daten (Weiterverwendung mit Quellenangabe). Die App zeigt die verwendeten Quellen im Seitenfuß an.
+Eigene Einträge, Importe aus eigenen/Händlerlisten und offene EEA-Daten (CC BY 4.0 laut EEA-Metadaten der Ausgabe 2024 – Quellenangabe erforderlich; bei anderen Jahrgängen die Lizenz auf der EEA-Seite prüfen). Die App zeigt die verwendeten Quellen im Seitenfuß an.
 Quellcode: Lizenz nach Wahl des Repository-Inhabers (bitte `LICENSE` ergänzen).

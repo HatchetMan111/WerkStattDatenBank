@@ -7,10 +7,12 @@ interface Props {
   fahrzeug: FahrzeugAuswahl | null;
   onChange: (f: FahrzeugAuswahl | null) => void;
   onMeldung: (text: string, fehler?: boolean) => void;
+  /** Ändert sich nach einem Import → Herstellerliste neu laden. */
+  neuLadenKey?: number;
 }
 
 /** Dreistufige Fahrzeugwahl: Hersteller → Modell → Variante. */
-export default function VehiclePicker({ fahrzeug, onChange, onMeldung }: Props) {
+export default function VehiclePicker({ fahrzeug, onChange, onMeldung, neuLadenKey = 0 }: Props) {
   const [hersteller, setHersteller] = useState<Hersteller[] | null>(null);
   const [modelle, setModelle] = useState<Modell[]>([]);
   const [varianten, setVarianten] = useState<Variante[]>([]);
@@ -27,9 +29,9 @@ export default function VehiclePicker({ fahrzeug, onChange, onMeldung }: Props) 
         }
       })
       .catch((e: Error) => onMeldung(e.message, true));
-    // einmaliges Laden beim Start
+    // beim Start und nach jedem Import
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [neuLadenKey]);
 
   // Auswahl von außen zurückgesetzt (Chip „×“) → Auswahlfelder leeren
   useEffect(() => {

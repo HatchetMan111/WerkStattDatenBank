@@ -113,6 +113,16 @@ CREATE TABLE IF NOT EXISTS datenquelle (
   eintraege INTEGER
 );
 
+-- Gemerkte Download-Adressen frei zugänglicher Daten (für „Aktualisieren“ in der Oberfläche).
+CREATE TABLE IF NOT EXISTS import_quelle (
+  id           INTEGER PRIMARY KEY,
+  typ          TEXT NOT NULL DEFAULT 'auto',
+  name         TEXT NOT NULL,
+  url          TEXT NOT NULL UNIQUE,
+  letzter_lauf TEXT,
+  ergebnis     TEXT
+);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS artikel_fts
   USING fts5(text, tokenize='trigram');  -- Teilstring-Suche, wichtig für deutsche Wortzusammensetzungen
 """
