@@ -252,8 +252,100 @@ def import_artikel(con, pfad, quelle="CSV-Import", progress=None):
 
 
 # ------------------------------------------------------------------------------------------------
+# Beispieldaten (erkennbar erfunden), damit man die Software sofort ausprobieren kann
+# ------------------------------------------------------------------------------------------------
+DEMO_HERSTELLER = "Musterwagen (Demo)"
+DEMO_VARIANTEN = {  # Modell -> [(Kraftstoff, ccm, kW, von, bis)]
+    "Muster 1": [("Benzin", 1197, 81, 2015, 2020), ("Diesel", 1598, 85, 2015, 2020), ("Benzin", 1395, 110, 2016, 2020)],
+    "Muster 2": [("Diesel", 1968, 110, 2019, 2024), ("Elektro", 0, 150, 2021, 2024)],
+}
+# (Lieferant, Nr., Bezeichnung, Gruppe, OE, passt zu [(Modell, Index)], EK netto)
+DEMO_ARTIKEL = [
+    ("Demo-Teile", "DEMO-BB-1000", "Bremsbelagsatz Vorderachse (Demo)", "Bremsbeläge", "OE-DEMO-1", [("Muster 1", 0), ("Muster 1", 1), ("Muster 1", 2)], 24.90),
+    ("Demo-Teile", "DEMO-BS-2000", "Bremsscheibe belüftet, Satz (Demo)", "Bremsscheiben", "OE-DEMO-2", [("Muster 1", 1), ("Muster 1", 2), ("Muster 2", 0)], 58.00),
+    ("Demo-Teile", "DEMO-OF-3000", "Ölfilter (Demo)", "Ölfilter", "OE-DEMO-3", [("Muster 1", 0), ("Muster 1", 1), ("Muster 2", 0)], 6.50),
+    ("Demo-Teile", "DEMO-ZK-4000", "Zündkerze (Demo)", "Zündkerzen", "OE-DEMO-4", [("Muster 1", 0), ("Muster 1", 2)], 7.20),
+    ("Demo-Teile", "DEMO-LF-5000", "Luftfilter (Demo)", "Luftfilter", "OE-DEMO-5", [("Muster 1", 0), ("Muster 1", 1), ("Muster 1", 2), ("Muster 2", 0)], 11.40),
+    ("Demo-Teile", "DEMO-IF-6000", "Innenraumfilter Aktivkohle (Demo)", "Innenraumfilter", "OE-DEMO-6", [("Muster 2", 0), ("Muster 2", 1)], 9.90),
+    ("Demo-Teile", "DEMO-WP-7000", "Wasserpumpe mit Dichtung (Demo)", "Wasserpumpen", "OE-DEMO-7", [], 43.00),  # ohne Zuordnung → „ungeprüft“
+]
+
+
+def demo_vorhanden(con):
+    return con.execute("SELECT 1 FROM artikel WHERE quelle = 'demo' LIMIT 1").fetchone() is not None or \
+        con.execute("SELECT 1 FROM fahrzeug WHERE quelle = 'demo' LIMIT 1").fetchone() is not None
+
+
+def demo_laden(con):
+    """Legt erfundene Beispieldaten an (Hersteller 'Musterwagen', Artikel 'DEMO-…'). Mehrfaches Laden ist unschädlich."""
+    db.init_schema(con)
+    hid = db.get_or_create_hersteller(con, DEMO_HERSTELLER)
+    fz = {}
+    for modell, varianten in DEMO_VARIANTEN.items():
+        mid = db.get_or_create_modell(con, hid, modell)
+        for i, (kraft, ccm, kw, von, bis) in enumerate(varianten):
+            con.execute(
+                """INSERT OR IGNORE INTO fahrzeug(modell_id, kraftstoff, hubraum_ccm, leistung_kw, baujahr_von, baujahr_bis, quelle)
+                   VALUES (?,?,?,?,?,?,'demo')""", (mid, kraft, ccm, kw, von, bis))
+            fz[(modell, i)] = con.execute(
+                "SELECT id FROM fahrzeug WHERE modell_id=? AND kraftstoff=? AND hubraum_ccm=? AND leistung_kw=? AND quelle='demo'",
+                (mid, kraft, ccm, kw)).fetchone()[0]
+    for lief, nr, bez, gruppe, oe, passt, ek in DEMO_ARTIKEL:
+        con.execute(
+            "INSERT OR IGNORE INTO artikel(lieferant, artikelnr, artikelnr_norm, bezeichnung, produktgruppe_id, quelle) VALUES (?,?,?,?,?,'demo')",
+            (lief, nr, db.norm(nr), bez, db.gruppe_id_by_name(con, gruppe)))
+        aid = con.execute("SELECT id FROM artikel WHERE lieferant=? AND artikelnr_norm=?", (lief, db.norm(nr))).fetchone()[0]
+        con.execute("INSERT OR IGNORE INTO oe_nummer VALUES (?,?,?,?)", (aid, "Musterwagen", oe, db.norm(oe)))
+        for key in passt:
+            con.execute("INSERT OR IGNORE INTO artikel_fahrzeug(artikel_id, fahrzeug_id, quelle) VALUES (?,?, 'demo')", (aid, fz[key]))
+        con.execute("INSERT OR REPLACE INTO preis(artikel_id, haendler, ek_netto) VALUES (?, 'Demo-Großhandel', ?)", (aid, ek))
+        db.reindex_artikel(con, aid)
+    # eine Beispiel-Buchung „verbaut“ (ohne Kundendaten)
+    bb = con.execute("SELECT id FROM artikel WHERE lieferant='Demo-Teile' AND artikelnr_norm=?", (db.norm("DEMO-BB-1000"),)).fetchone()[0]
+    if not con.execute("SELECT 1 FROM verbaut WHERE artikel_id=? AND auftrag='DEMO-AUFTRAG-1'", (bb,)).fetchone():
+        con.execute("INSERT INTO verbaut(artikel_id, fahrzeug_id, auftrag, km, notiz) VALUES (?,?,?,?,?)",
+                    (bb, fz[("Muster 1", 0)], "DEMO-AUFTRAG-1", 84500, "Beispiel-Buchung"))
+    db.register_quelle(con, "demo", "Demo-Daten (erfunden)", None,
+                       "Nur zum Ausprobieren, keine echten Fahrzeuge oder Teile", len(DEMO_ARTIKEL))
+    con.commit()
+    return {"typ": "demo", "artikel": len(DEMO_ARTIKEL), "fahrzeuge": len(fz)}
+
+
+def demo_entfernen(con):
+    """Entfernt NUR die Beispieldaten (Quelle 'demo'); eigene und importierte Daten bleiben unberührt."""
+    ids = [r[0] for r in con.execute("SELECT id FROM artikel WHERE quelle = 'demo'")]
+    for aid in ids:
+        con.execute("DELETE FROM artikel_fts WHERE rowid = ?", (aid,))
+    con.execute("DELETE FROM artikel WHERE quelle = 'demo'")           # OE, Preise, Zuordnungen, Buchungen laufen per CASCADE mit
+    con.execute("DELETE FROM fahrzeug WHERE quelle = 'demo'")
+    con.execute("DELETE FROM modell WHERE hersteller_id IN (SELECT id FROM hersteller WHERE name = ?) "
+                "AND id NOT IN (SELECT modell_id FROM fahrzeug)", (DEMO_HERSTELLER,))
+    con.execute("DELETE FROM hersteller WHERE name = ? AND id NOT IN (SELECT hersteller_id FROM modell)", (DEMO_HERSTELLER,))
+    con.execute("DELETE FROM datenquelle WHERE key = 'demo'")
+    con.commit()
+    return {"typ": "demo", "entfernte_artikel": len(ids)}
+
+
+# ------------------------------------------------------------------------------------------------
 # Dateien vorbereiten (.zip / .gz entpacken) und aus dem Internet laden
 # ------------------------------------------------------------------------------------------------
+def pruefe_inhalt(pfad):
+    """Erkennt typische Fehlgriffe (Link auf PDF, Webseite oder Binärdatei) und erklärt sie verständlich."""
+    with open(pfad, "rb") as f:
+        kopf = f.read(4096)
+    if kopf.startswith(b"%PDF"):
+        raise ImportFehler(
+            "Das ist ein PDF-Dokument (Beschreibung/Metadaten), keine Datendatei. Gesucht ist der Link auf die CSV- oder "
+            "ZIP-Datei selbst: Auf der Download-Seite beim Jahrgang „Download“ wählen, bei der CSV-/ZIP-Datei die Linkadresse kopieren.")
+    low = kopf.lstrip().lower()
+    if low.startswith((b"<!doctype html", b"<html", b"<head", b"<?xml")) or b"<html" in low[:1000]:
+        raise ImportFehler(
+            "Der Link zeigt auf eine Webseite (HTML), nicht auf eine Datei. Auf der Seite den Download der CSV- oder ZIP-Datei "
+            "wählen und dessen Linkadresse kopieren – oder die Datei herunterladen und hier hochladen.")
+    if b"\x00" in kopf:
+        raise ImportFehler("Das ist keine Textdatei (CSV). Erlaubt sind CSV, ZIP (mit CSV) und GZ.")
+
+
 def aufbereiten(pfad, ordner):
     """Gibt die zu lesenden CSV-Dateien zurück. Entpackt .zip und .gz mit Größenbegrenzung."""
     pfad = Path(pfad)
@@ -273,6 +365,8 @@ def aufbereiten(pfad, ordner):
                 out.append(ziel)
         if not out:
             raise ImportFehler("Das ZIP-Archiv enthält keine CSV-/TXT-Datei.")
+        for datei in out:
+            pruefe_inhalt(datei)
         return out
     with open(pfad, "rb") as f:
         magic = f.read(2)
@@ -280,7 +374,9 @@ def aufbereiten(pfad, ordner):
         ziel = ordner / "entpackt-gz.csv"
         with gzip.open(pfad, "rb") as src, open(ziel, "wb") as dst:
             _kopiere_begrenzt(src, dst, MAX_ENTPACKT)
+        pruefe_inhalt(ziel)
         return [ziel]
+    pruefe_inhalt(pfad)
     return [pfad]
 
 
@@ -418,6 +514,7 @@ def _lauf(job_id, ordner, typ, quelle, url, datei, quelle_id):
         _setze(phase=phase, fortschritt=n)
 
     con = None
+    ergebnis, fehler, details = None, None, None
     try:
         if url:
             datei = ordner / "download.bin"
@@ -427,32 +524,32 @@ def _lauf(job_id, ordner, typ, quelle, url, datei, quelle_id):
         art = typ if typ in ("eea", "artikel") else erkenne_typ(dateien[0])
         con = db.connect()
         if art == "eea":
-            erg = import_eea(con, dateien, progress=fortschritt)
+            ergebnis = import_eea(con, dateien, progress=fortschritt)
         else:
-            erg = import_artikel(con, dateien[0], quelle or "CSV-Import", progress=fortschritt)
-        if quelle_id:
-            con.execute("UPDATE import_quelle SET letzter_lauf = datetime('now'), ergebnis = ? WHERE id = ?",
-                        ("OK: " + ", ".join(f"{k}={v}" for k, v in erg.items() if k != "typ"), quelle_id))
-            con.commit()
-        _setze(state="fertig", phase="Fertig", ergebnis=erg, ende=time.time())
+            ergebnis = import_artikel(con, dateien[0], quelle or "CSV-Import", progress=fortschritt)
+        _merke_lauf(con, quelle_id, "OK: " + ", ".join(f"{k}={v}" for k, v in ergebnis.items() if k != "typ"))
     except ImportFehler as e:
-        _fehler(con, quelle_id, str(e), None)
+        fehler = str(e)
     except Exception as e:  # unerwartet: vollständige Fehlerkette in Status (nur für Berechtigte) und Journal
-        tb = traceback.format_exc()
-        print(f"Import {job_id} fehlgeschlagen:\n{tb}", file=sys.stderr, flush=True)
-        _fehler(con, quelle_id, f"Unerwarteter Fehler: {type(e).__name__}: {e}", tb)
-    finally:
-        if con is not None:
-            con.close()
-        shutil.rmtree(ordner, ignore_errors=True)
+        details = traceback.format_exc()
+        print(f"Import {job_id} fehlgeschlagen:\n{details}", file=sys.stderr, flush=True)
+        fehler = f"Unerwarteter Fehler: {type(e).__name__}: {e}"
+    if fehler is not None:
+        _merke_lauf(con, quelle_id, "Fehler: " + fehler[:300])
+    if con is not None:
+        con.close()
+    shutil.rmtree(ordner, ignore_errors=True)  # erst aufräumen, dann „fertig“ melden
+    if fehler is None:
+        _setze(state="fertig", phase="Fertig", ergebnis=ergebnis, ende=time.time())
+    else:
+        _setze(state="fehler", phase="Fehlgeschlagen", fehler=fehler, details=details, ende=time.time())
 
 
-def _fehler(con, quelle_id, text, details):
-    if con is not None and quelle_id:
-        try:
-            con.execute("UPDATE import_quelle SET letzter_lauf = datetime('now'), ergebnis = ? WHERE id = ?",
-                        ("Fehler: " + text[:300], quelle_id))
-            con.commit()
-        except Exception:
-            pass
-    _setze(state="fehler", phase="Fehlgeschlagen", fehler=text, details=details, ende=time.time())
+def _merke_lauf(con, quelle_id, text):
+    if con is None or not quelle_id:
+        return
+    try:
+        con.execute("UPDATE import_quelle SET letzter_lauf = datetime('now'), ergebnis = ? WHERE id = ?", (text, quelle_id))
+        con.commit()
+    except Exception:
+        pass

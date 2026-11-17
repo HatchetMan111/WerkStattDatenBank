@@ -7,6 +7,8 @@ interface Props {
   onClose: () => void;
   /** Wird nach jedem erfolgreich beendeten Import aufgerufen (Zahlen, Fahrzeuge, Artikel neu laden). */
   onFertig: () => void;
+  /** Sind erfundene Beispieldaten in der Datenbank? */
+  demoVorhanden: boolean;
 }
 
 const TYPEN = [
@@ -22,12 +24,13 @@ function fortschrittText(s: ImportStatus): string {
   return s.fortschritt ? s.fortschritt.toLocaleString("de-DE") + " Zeilen/Artikel" : "";
 }
 
-export default function ImportDialog({ offen, onClose, onFertig }: Props) {
+export default function ImportDialog({ offen, onClose, onFertig, demoVorhanden }: Props) {
   const dlg = useRef<HTMLDialogElement>(null);
   const gemeldet = useRef(0);
   const [quellen, setQuellen] = useState<ImportQuellen | null>(null);
   const [status, setStatus] = useState<ImportStatus | null>(null);
   const [fehler, setFehler] = useState("");
+  const [info, setInfo] = useState("");
   const [datei, setDatei] = useState<File | null>(null);
   const [typ, setTyp] = useState("auto");
   const [herkunft, setHerkunft] = useState("");
@@ -79,6 +82,19 @@ export default function ImportDialog({ offen, onClose, onFertig }: Props) {
     }
     if (status && status.state === "fehler") void ladeQuellen();
   }, [status, onFertig, ladeQuellen]);
+
+  async function demo(aktion: "laden" | "entfernen") {
+    if (aktion === "entfernen" && !window.confirm("Beispieldaten entfernen? Eigene und importierte Daten bleiben erhalten.")) return;
+    setFehler("");
+    setInfo("");
+    try {
+      await api("/api/import/demo", { method: "POST", body: { aktion } });
+      setInfo(aktion === "laden" ? "Beispieldaten geladen." : "Beispieldaten entfernt.");
+      onFertig();
+    } catch (e) {
+      setFehler((e as Error).message);
+    }
+  }
 
   async function hochladen() {
     if (!datei) return;
@@ -132,6 +148,19 @@ export default function ImportDialog({ offen, onClose, onFertig }: Props) {
         Nur Daten verwenden, die du verwenden darfst: offene Daten mit Quellenangabe, eigene Listen oder Händlerlisten im Rahmen der
         Händlerbedingungen. Importe sind wiederholbar – vorhandene Einträge werden aktualisiert, nicht doppelt angelegt.
       </p>
+
+      <h3>Zum Ausprobieren: Beispieldaten</h3>
+      <p className="status">
+        Erfundene Fahrzeuge („Musterwagen“) und Teile („DEMO-…“), damit du sofort siehst, wie Suche, Fahrzeugwahl, Zuordnung und „verbaut“ funktionieren.
+      </p>
+      <div className="actions">
+        {demoVorhanden ? (
+          <button type="button" className="danger" disabled={laeuft} onClick={() => void demo("entfernen")}>Beispieldaten entfernen</button>
+        ) : (
+          <button type="button" disabled={laeuft} onClick={() => void demo("laden")}>Beispieldaten laden</button>
+        )}
+      </div>
+      {info && <p className="status" role="status">{info}</p>}
 
       <h3>1. Datei hochladen</h3>
       <div className="row2">

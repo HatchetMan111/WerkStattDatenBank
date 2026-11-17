@@ -10,6 +10,7 @@
 #   WDB_BRANCH    Standard: main
 #   WDB_PORT      Standard: 8080
 #   WDB_DEBUG     1 = bash -x Ablaufprotokoll
+#   WDB_DEMO      1 (Standard) = bei Neuinstallation erfundene Beispieldaten laden, 0 = leere Datenbank
 #   WDB_IMPORT_URL  optional: direkter Download-Link (CSV/ZIP/GZ), wird nach der Installation importiert
 set -Eeuo pipefail
 
@@ -207,6 +208,13 @@ verify() {
   say "Selbsttest ok: Dienst aktiv, API und Oberfläche antworten auf Port $port."
 }
 
+# Beispieldaten zum sofortigen Ausprobieren (nur bei Neuinstallation; Fehler brechen nichts ab).
+lade_demo() {
+  [[ "$MODE" == install && "${WDB_DEMO:-1}" == "1" ]] || return 0
+  say "Beispieldaten laden (erfunden; in der Oberfläche unter Daten importieren wieder entfernbar)…"
+  run /usr/local/bin/wdb-run init_db.py --demo || say "WARNUNG: Beispieldaten konnten nicht geladen werden (nicht kritisch)."
+}
+
 # Optionaler Erstimport. Ein Fehler hier bricht die Installation NICHT ab (der Import lässt sich in der Oberfläche wiederholen).
 first_import() {
   [[ -n "${WDB_IMPORT_URL:-}" ]] || return 0
@@ -232,6 +240,7 @@ main() {
     rollback
     die "Einrichtung fehlgeschlagen (siehe oben). Vorherige Version wiederhergestellt, falls vorhanden."
   fi
+  lade_demo
   first_import
   rm -rf "$SRC_TMP"
   # Nur die zwei neuesten Sicherungen behalten.

@@ -19,6 +19,7 @@ const ARTIKEL: { id: number; lieferant: string; artikelnr: string; bezeichnung: 
 function fixtureFetch(): typeof fetch {
   const passt = new Set<string>(["1:1", "3:1"]); // artikel:fahrzeug
   let fahrzeugAnzahl = 3;
+  let demoDa = true;
   let job: Record<string, unknown> = { id: 0, state: "leer", phase: "", fortschritt: 0, name: "", ergebnis: null, fehler: null, details: null };
   let abfragen = 0;
   let naechstesFehler = false;
@@ -34,7 +35,7 @@ function fixtureFetch(): typeof fetch {
     if (p === "/api/stats") {
       return json({
         zahlen: { hersteller: 1, modelle: 1, fahrzeuge: fahrzeugAnzahl, artikel: ARTIKEL.length, zuordnungen: passt.size },
-        quellen: [{ key: "demo", name: "Demo-Daten", url: null, lizenz: "frei", stand: "2026-01", eintraege: 3 }],
+        quellen: demoDa ? [{ key: "demo", name: "Demo-Daten", url: null, lizenz: "frei", stand: "2026-01", eintraege: 3 }] : [{ key: "eea", name: "EEA", url: null, lizenz: "CC BY 4.0", stand: "2024", eintraege: 3 }],
         schreiben: true,
         token_noetig: false,
       });
@@ -84,6 +85,10 @@ function fixtureFetch(): typeof fetch {
       const b = JSON.parse(String(init?.body)) as { lieferant: string; artikelnr: string; bezeichnung: string };
       ARTIKEL.push({ id: 4, lieferant: b.lieferant, artikelnr: b.artikelnr, bezeichnung: b.bezeichnung, quelle: "manuell", gruppe: null, ek_min: null });
       return json({ id: 4 }, 201);
+    }
+    if (p === "/api/import/demo" && m === "POST") {
+      demoDa = (JSON.parse(String(init?.body)) as { aktion: string }).aktion === "laden";
+      return json({ typ: "demo" });
     }
     if (p === "/api/import/quellen" && m === "GET") {
       return json({
@@ -251,6 +256,17 @@ describe("WerkstattDatenBank", () => {
       await within(dlg).findByText(/Fertig:/, {}, { timeout: 5000 });
       await within(dlg).findByText("Gemerkte Quellen");
       await waitFor(() => expect(document.querySelector(".zahlen")!.textContent).toContain("4.200"), { timeout: 3000 });
+    });
+
+    it("lädt und entfernt Beispieldaten", async () => {
+      vi.stubGlobal("confirm", () => true);
+      window.confirm = () => true;
+      render(<App />);
+      const dlg = await oeffneImport();
+      fireEvent.click(await within(dlg).findByRole("button", { name: "Beispieldaten entfernen" }));
+      fireEvent.click(await within(dlg).findByRole("button", { name: "Beispieldaten laden" }));
+      await within(dlg).findByText("Beispieldaten geladen.");
+      await within(dlg).findByRole("button", { name: "Beispieldaten entfernen" });
     });
 
     it("zeigt Fehler samt technischen Details", async () => {

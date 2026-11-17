@@ -25,7 +25,7 @@ export default function VehiclePicker({ fahrzeug, onChange, onMeldung, neuLadenK
       .then((hs) => {
         setHersteller(hs);
         if (!hs.length) {
-          onMeldung("Noch keine Fahrzeugdaten. Mit import_eea.py importieren oder init_db.py --demo ausführen.");
+          onMeldung("Noch keine Fahrzeugdaten. Über „Daten importieren“ (oben rechts) Beispieldaten laden oder EEA-Fahrzeugdaten importieren.");
         }
       })
       .catch((e: Error) => onMeldung(e.message, true));

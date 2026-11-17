@@ -409,6 +409,15 @@ class Handler(BaseHTTPRequestHandler):
         self._require_write()
         if method == "POST" and path == "/api/import/upload":
             return self._upload(q)
+        if method == "POST" and path == "/api/import/demo":
+            if imp.laeuft():
+                raise ApiError(409, "Es läuft bereits ein Import.", "belegt")
+            aktion = self._body().get("aktion")
+            if aktion == "laden":
+                return imp.demo_laden(con)
+            if aktion == "entfernen":
+                return imp.demo_entfernen(con)
+            raise ApiError(400, "aktion muss laden oder entfernen sein")
         if method == "POST" and path == "/api/import/url":
             return starte_url_import(con, self._body())
         m = re.fullmatch(r"/api/import/quellen/(\d+)(/aktualisieren)?", path)

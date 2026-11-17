@@ -232,6 +232,50 @@ class ImportTests(unittest.TestCase):
         self.assertIn("nicht erkannt", st["fehler"])
         self.assertIn("['a', 'b']", st["fehler"])
 
+    def test_15_pdf_und_html_werden_erklaert(self):
+        self.srv.upload(b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n1 0 obj\n")
+        st = self.srv.warte()
+        self.assertEqual(st["state"], "fehler")
+        self.assertIn("PDF-Dokument", st["fehler"])
+        self.assertIn("CSV- oder ZIP-Datei", st["fehler"])
+        self.srv.upload(b"<!DOCTYPE html><html><head><title>EEA</title></head><body>Seite</body></html>")
+        self.assertIn("Webseite (HTML)", self.srv.warte()["fehler"])
+        self.srv.upload(b"PK\x00\x00 kein zip \x00\x01\x02")
+        self.assertIn("keine Textdatei", self.srv.warte()["fehler"])
+
+    def test_16_demo_laden_und_entfernen(self):
+        code, r = self.srv.call("POST", "/api/import/demo", {"aktion": "laden"})
+        self.assertEqual(code, 200, r)
+        self.assertEqual(r["artikel"], 7)
+        self.srv.call("POST", "/api/import/demo", {"aktion": "laden"})  # zweimal: keine Dubletten
+        _, rows = self.srv.call("GET", "/api/artikel")
+        self.assertEqual(len([x for x in rows if x["quelle"] == "demo"]), 7)
+        _, hs = self.srv.call("GET", "/api/hersteller")
+        muster = [h for h in hs if "Muster" in h["name"]][0]
+        _, ms = self.srv.call("GET", f"/api/modelle?hersteller_id={muster['id']}")
+        self.assertEqual(sorted(m["name"] for m in ms), ["Muster 1", "Muster 2"])
+        _, fz = self.srv.call("GET", f"/api/fahrzeuge?modell_id={ms[0]['id']}")
+        _, passend = self.srv.call("GET", f"/api/artikel?fahrzeug_id={fz[0]['id']}")
+        self.assertGreaterEqual(len(passend), 3)
+        _, alle = self.srv.call("GET", f"/api/artikel?fahrzeug_id={fz[0]['id']}&strikt=0")
+        self.assertGreater(len(alle), len(passend))  # Wasserpumpe ohne Zuordnung → „ungeprüft“
+        _, d = self.srv.call("GET", f"/api/artikel/{passend[0]['id']}")
+        self.assertTrue(d["oe"])
+        # eigene Daten bleiben beim Entfernen erhalten
+        self.srv.upload(ARTIKEL_CSV.encode(), name="liste.csv", quelle="Eigene")
+        self.srv.warte()
+        code, r = self.srv.call("POST", "/api/import/demo", {"aktion": "entfernen"})
+        self.assertEqual((code, r["entfernte_artikel"]), (200, 7))
+        _, rows = self.srv.call("GET", "/api/artikel")
+        self.assertEqual([x["quelle"] for x in rows if x["quelle"] == "demo"], [])
+        self.assertTrue(any(x["artikelnr"] == "T-100" for x in rows))
+        _, hs = self.srv.call("GET", "/api/hersteller")
+        self.assertFalse(any("Muster" in h["name"] for h in hs))
+        _, stats = self.srv.call("GET", "/api/stats")
+        self.assertNotIn("demo", [q["key"] for q in stats["quellen"]])
+        self.assertEqual(self.srv.call("POST", "/api/import/demo", {"aktion": "x"})[0], 400)
+        self.assertEqual(self.srv.call("POST", "/api/import/demo", {"aktion": "laden"}, token=False)[0], 401)
+
     # ---- URL-Import ----
     def test_20_url_import_mit_weiterleitung_und_merken(self):
         code, r = self.srv.call("POST", "/api/import/url", {"url": self.files.url("weiter"), "typ": "eea",

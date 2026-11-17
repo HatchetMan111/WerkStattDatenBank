@@ -20,7 +20,7 @@ Das Skript
 
 1. wählt die **nächste freie Container-ID** (`pvesh get /cluster/nextid`, oder `var_ctid=…`),
 2. legt einen unprivilegierten Debian-12-LXC namens **`werkstattdatenbank`** an (1 Kern, 1 GB RAM, 8 GB Platte, `onboot: 1`, DHCP),
-3. installiert Python 3, lädt die App aus diesem Repo, richtet Benutzer, Datenbank, Konfiguration und den systemd-Dienst ein,
+3. installiert Python 3, lädt die App aus diesem Repo, richtet Benutzer, Datenbank, Konfiguration und den systemd-Dienst ein und lädt **erfundene Beispieldaten** („Musterwagen“, „DEMO-…"), damit du die Software sofort ausprobieren kannst,
 4. prüft sich selbst (Dienst `active`/`enabled`, HTTP-Check auf `localhost:8080`) und zeigt am Ende die URL.
 
 ### Erwartete Ausgabe (gekürzt)
@@ -50,6 +50,7 @@ Das Skript
 | `var_ip` / `var_gw` | feste IP, z. B. `192.168.178.60/24` und Gateway | DHCP |
 | `var_storage` / `var_template_storage` | Speicher für Platte / Vorlage | automatisch (`local-lvm` / `local`) |
 | `var_port` | Port der Oberfläche | `8080` |
+| `var_demo=0` | keine Beispieldaten laden (leere Datenbank) | Beispieldaten an |
 | `var_import_url` | Download-Link (CSV/ZIP/GZ), der nach der Installation importiert wird | – |
 | `var_new=1` | immer neuen Container anlegen (statt Update) | – |
 | `WDB_REPO`, `WDB_BRANCH` | anderes Repo / Branch (Fork) | dieses Repo, `main` |
@@ -70,6 +71,8 @@ Beispiel: `var_ctid=150 var_ram=2048 var_ip=192.168.178.60/24 var_gw=192.168.178
 
 ## Daten laden
 
+**Beispieldaten:** Bei einer Neuinstallation sind erfundene Fahrzeuge und Teile bereits geladen (ein Update lädt sie nicht erneut). Im Import-Dialog kannst du sie mit **„Beispieldaten entfernen“** löschen – eigene und importierte Daten bleiben dabei erhalten – oder mit **„Beispieldaten laden“** zurückholen.
+
 **In der Oberfläche** (Knopf **„Daten importieren“** oben rechts, Zugangs-Token nötig):
 
 1. **Datei hochladen** – CSV, auch als `.zip` oder `.gz`. Die Art wird automatisch erkannt (EEA-Fahrzeugdaten oder Artikelliste).
@@ -79,7 +82,7 @@ Beispiel: `var_ctid=150 var_ram=2048 var_ip=192.168.178.60/24 var_gw=192.168.178
 
 **Fahrzeuge aus den offenen EEA-Daten:** Die Daten sind nicht im Repository enthalten (sehr groß). So kommen sie in die Datenbank:
 
-1. Die Seite „Monitoring of CO2 emissions from passenger cars“ der EEA öffnen (Link im Import-Dialog), den gewünschten Jahrgang wählen, **Download** → CSV.
+1. Die Seite „Monitoring of CO2 emissions from passenger cars“ der EEA öffnen (Link im Import-Dialog), den gewünschten Jahrgang wählen, **Download** → CSV oder ZIP. Wichtig: der Link muss auf die **Datei selbst** zeigen. Links auf Beschreibungsseiten oder PDF-Dokumente meldet der Import verständlich als solche.
 2. Datei im Import-Dialog hochladen **oder** den Download-Link einfügen. Mehrere Jahre jeweils einzeln importieren: Zulassungszahlen gelten dann für die zuletzt
    importierte Datei, Baujahrspanne und Varianten wachsen mit. (Soll alles in einem Lauf berechnet werden: Kommandozeile, siehe unten.)
 3. Die Quelle und Lizenz erscheinen automatisch im Seitenfuß.

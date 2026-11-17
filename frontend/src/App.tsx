@@ -72,7 +72,7 @@ export default function App() {
             ? `${r.length} Artikel${r.length >= LIMIT ? " (Anzeige begrenzt, Filter eingrenzen)" : ""}`
             : filterAktiv
               ? "Keine Artikel für diese Auswahl. Bei Fahrzeugwahl: Zuordnungen stammen aus eigenen Einträgen oder Importen."
-              : "Noch keine Artikel. Per import_artikel_csv.py importieren oder „Neuer Artikel“.",
+              : "Noch keine Artikel. Über „Daten importieren“ Beispieldaten laden oder eine Artikelliste hochladen, oder „Neuer Artikel“.",
         );
       })
       .catch((e: Error) => {
@@ -207,7 +207,12 @@ export default function App() {
 
       <Footer quellen={stats?.quellen ?? []} />
 
-      <ImportDialog offen={importOffen} onClose={() => setImportOffen(false)} onFertig={nachImport} />
+      <ImportDialog
+        offen={importOffen}
+        onClose={() => setImportOffen(false)}
+        onFertig={nachImport}
+        demoVorhanden={!!stats?.quellen.some((q) => q.key === "demo")}
+      />
 
       <NewArticleDialog
         offen={neu}
