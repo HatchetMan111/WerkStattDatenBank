@@ -175,7 +175,9 @@ React-Oberfläche (Vitest, mit Testdaten **und** gegen das echte Backend; zusät
 **Nicht** getestet: ein Download direkt von den EEA-Servern (aus der Entwicklungsumgebung nicht erreichbar – der Import wurde mit lokal bereitgestellten Dateien geprüft; die echten EEA-Spaltennamen sind im Importer als Aliase hinterlegt, `--zeigen` bzw. die Fehlermeldung zeigt die Kopfzeile, falls etwas nicht passt), sowie ein echter Lauf auf einem Proxmox-Host (echte Container-Erstellung, apt im Container, echtes systemd, echter Neustart).
 Bitte nach der ersten Installation `bash test/verify.sh` auf dem Host ausführen und bei Abweichungen das Installer-Protokoll prüfen.
 
-## Datenquellen und Lizenz
+## Rechtliches
 
-Eigene Einträge, Importe aus eigenen/Händlerlisten und offene EEA-Daten (CC BY 4.0 laut EEA-Metadaten der Ausgabe 2024 – Quellenangabe erforderlich; bei anderen Jahrgängen die Lizenz auf der EEA-Seite prüfen). Die App zeigt die verwendeten Quellen im Seitenfuß an.
-Quellcode: Lizenz nach Wahl des Repository-Inhabers (bitte `LICENSE` ergänzen).
+* **Code:** MIT-Lizenz (`LICENSE`), © 2026 LichtValleyApps – ohne Gewährleistung und Haftung.
+* **Daten:** Die Lizenz des Codes gilt nicht für importierte Daten. Datenquellen, Bedingungen (EEA: CC BY, Quellenangabe, Änderungsvermerk), Pflichten des Betreibers
+  (Händlerlisten, DSGVO, Betrieb im Internet) und Drittbibliotheken stehen in **`NOTICE.md`**.
+* Es werden keine Daten proprietärer Kataloge kopiert. Die Passgenauigkeit ist nicht gewährleistet (Hinweis im Seitenfuß).

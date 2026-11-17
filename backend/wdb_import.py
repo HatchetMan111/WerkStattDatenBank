@@ -31,7 +31,7 @@ USER_AGENT = "WerkstattDatenBank/1.0 (+https://github.com/HatchetMan111/WerkStat
 
 EEA_NAME = "Europäische Umweltagentur (EEA): CO2-Überwachung neuer Pkw"
 EEA_URL = "https://www.eea.europa.eu/en/datahub/datahubitem-view/fa8b1229-3db6-495d-b18e-9c9b3267c02b"
-EEA_LIZENZ = "CC BY 4.0 (EEA / Europäische Kommission, GD CLIMA) – Quellenangabe erforderlich"
+EEA_LIZENZ = "CC BY 4.0 (EEA / Europäische Kommission, GD CLIMA); aggregiert, Schreibweise angepasst"
 
 
 class ImportFehler(Exception):

@@ -20,11 +20,16 @@ export default function Footer({ quellen }: { quellen: Quelle[] }) {
                 )}
                 {q.lizenz ? " – " + q.lizenz : ""}
                 {q.stand ? ` (Stand ${q.stand})` : ""}
+                {q.key === "eea" &&
+                  ". Daten aggregiert und in der Schreibweise angepasst; sie geben nicht notwendig die Meinung der EEA wieder, die EEA übernimmt keine Haftung"}
               </li>
             ))}
           </ul>
         </div>
       )}
+      <p>
+        © LichtValleyApps · Quellcode unter MIT-Lizenz · <a href="/third-party-licenses.txt" target="_blank" rel="noopener noreferrer">Lizenzen der verwendeten Bibliotheken</a>
+      </p>
     </footer>
   );
 }
